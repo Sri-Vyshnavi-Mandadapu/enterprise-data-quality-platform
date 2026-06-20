@@ -1,0 +1,16 @@
+streamlit
+pandas
+numpy
+plotly
+scipy
+scikit-learn
+openpyxl
+fpdf2
+sqlalchemy
+pymysql
+psycopg2-binary
+yagmail
+schedule
+ydata-profiling
+great-expectations
+joblib
