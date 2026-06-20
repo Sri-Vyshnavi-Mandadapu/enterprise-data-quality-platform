@@ -6,4 +6,3 @@ scipy
 scikit-learn
 openpyxl
 fpdf2
-joblib
