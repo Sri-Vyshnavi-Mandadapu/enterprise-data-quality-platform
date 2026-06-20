@@ -3,18 +3,25 @@ import pandas as pd
 import numpy as np
 import plotly.express as px
 
-from scipy import stats
 from fpdf import FPDF
 
 from anomaly_detection.isolation_forest import detect_anomalies
 from validation.validator import validate_data
+
+# --------------------------------------------------
+# PAGE CONFIG
+# --------------------------------------------------
 
 st.set_page_config(
     page_title="Enterprise Data Quality Platform",
     layout="wide"
 )
 
-st.title("Enterprise Data Quality & Reporting Platform")
+st.title("📊 Enterprise Data Quality & Reporting Platform")
+
+# --------------------------------------------------
+# FILE UPLOAD
+# --------------------------------------------------
 
 uploaded_file = st.file_uploader(
     "Upload CSV File",
@@ -25,56 +32,62 @@ if uploaded_file:
 
     df = pd.read_csv(uploaded_file)
 
-    st.subheader("Raw Dataset")
+    st.subheader("📄 Raw Dataset")
     st.dataframe(df)
 
-    # Missing Values
+    # --------------------------------------------------
+    # DATA QUALITY METRICS
+    # --------------------------------------------------
 
     missing_values = df.isnull().sum().sum()
 
-    st.metric(
-        "Missing Values",
-        missing_values
-    )
-
-    # Duplicates
-
     duplicate_rows = df.duplicated().sum()
 
-    st.metric(
-        "Duplicate Rows",
-        duplicate_rows
-    )
+    col1, col2 = st.columns(2)
 
-    # Cleaning
+    with col1:
+        st.metric(
+            "Missing Values",
+            int(missing_values)
+        )
+
+    with col2:
+        st.metric(
+            "Duplicate Rows",
+            int(duplicate_rows)
+        )
+
+    # --------------------------------------------------
+    # DATA CLEANING
+    # --------------------------------------------------
 
     cleaned_df = df.copy()
 
-    cleaned_df.drop_duplicates(
-        inplace=True
-    )
+    # Remove duplicates
+    cleaned_df = cleaned_df.drop_duplicates()
 
+    # Fill missing values
     for col in cleaned_df.columns:
 
-        if cleaned_df[col].dtype != "object":
+        if cleaned_df[col].dtype == "object":
 
-            cleaned_df[col].fillna(
-                cleaned_df[col].median(),
-                inplace=True
+            cleaned_df[col] = cleaned_df[col].fillna(
+                "Unknown"
             )
 
         else:
 
-            cleaned_df[col].fillna(
-                "Unknown",
-                inplace=True
+            cleaned_df[col] = cleaned_df[col].fillna(
+                cleaned_df[col].median()
             )
 
-    # Quality Score
+    # --------------------------------------------------
+    # QUALITY SCORE
+    # --------------------------------------------------
 
     total_cells = (
-        cleaned_df.shape[0] *
-        cleaned_df.shape[1]
+        cleaned_df.shape[0]
+        * cleaned_df.shape[1]
     )
 
     remaining_missing = (
@@ -91,19 +104,24 @@ if uploaded_file:
         f"{quality_score:.2f}%"
     )
 
-    # Validation
+    # --------------------------------------------------
+    # VALIDATION
+    # --------------------------------------------------
 
-    st.subheader("Validation Results")
+    st.subheader("✅ Validation Results")
 
-    results = validate_data(
+    validation_results = validate_data(
         cleaned_df
     )
 
-    for item in results:
+    for result in validation_results:
+        st.write(result)
 
-        st.write(item)
+    # --------------------------------------------------
+    # ANOMALY DETECTION
+    # --------------------------------------------------
 
-    # Anomaly Detection
+    st.subheader("🚨 Anomaly Detection")
 
     cleaned_df = detect_anomalies(
         cleaned_df
@@ -113,11 +131,31 @@ if uploaded_file:
         cleaned_df["Anomaly"] == -1
     ]
 
-    st.subheader("Detected Anomalies")
+    if len(anomalies) > 0:
 
-    st.dataframe(anomalies)
+        st.warning(
+            f"{len(anomalies)} anomaly records detected"
+        )
 
-    # Correlation
+        st.dataframe(anomalies)
+
+    else:
+
+        st.success(
+            "No anomalies detected"
+        )
+
+    # --------------------------------------------------
+    # CLEANED DATA
+    # --------------------------------------------------
+
+    st.subheader("🧹 Cleaned Dataset")
+
+    st.dataframe(cleaned_df)
+
+    # --------------------------------------------------
+    # CORRELATION HEATMAP
+    # --------------------------------------------------
 
     numeric_df = cleaned_df.select_dtypes(
         include=np.number
@@ -125,68 +163,161 @@ if uploaded_file:
 
     if not numeric_df.empty:
 
-        corr = numeric_df.corr()
+        st.subheader(
+            "📈 Correlation Heatmap"
+        )
+
+        correlation_matrix = (
+            numeric_df.corr()
+        )
 
         fig = px.imshow(
-            corr,
-            text_auto=True
+            correlation_matrix,
+            text_auto=True,
+            aspect="auto"
         )
 
-        st.plotly_chart(
-            fig,
-            use_container_width=True
+        st.plotly_chart(fig)
+
+    # --------------------------------------------------
+    # DATA DISTRIBUTION
+    # --------------------------------------------------
+
+    st.subheader(
+        "📊 Numeric Column Distribution"
+    )
+
+    numeric_columns = (
+        cleaned_df.select_dtypes(
+            include=np.number
+        ).columns
+    )
+
+    if len(numeric_columns) > 0:
+
+        selected_column = st.selectbox(
+            "Select Numeric Column",
+            numeric_columns
         )
 
-    # Export Excel
+        histogram = px.histogram(
+            cleaned_df,
+            x=selected_column,
+            nbins=20,
+            title=f"{selected_column} Distribution"
+        )
 
-    excel_file = "reports/cleaned_data.xlsx"
+        st.plotly_chart(histogram)
+
+    # --------------------------------------------------
+    # EXPORT CLEANED EXCEL
+    # --------------------------------------------------
+
+    import os
+
+    os.makedirs(
+        "reports",
+        exist_ok=True
+    )
+
+    excel_file = (
+        "reports/cleaned_data.xlsx"
+    )
 
     cleaned_df.to_excel(
         excel_file,
         index=False
     )
 
-    with open(excel_file, "rb") as f:
+    with open(
+        excel_file,
+        "rb"
+    ) as file:
 
         st.download_button(
-            "Download Cleaned Excel",
-            f,
-            file_name="cleaned_data.xlsx"
+            label="⬇ Download Cleaned Excel",
+            data=file,
+            file_name="cleaned_data.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
 
-    # PDF Report
+    # --------------------------------------------------
+    # PDF REPORT
+    # --------------------------------------------------
 
     pdf = FPDF()
 
     pdf.add_page()
 
     pdf.set_font(
-        "Arial",
+        "helvetica",
         size=12
     )
 
     pdf.cell(
         200,
         10,
-        txt="Data Quality Report",
-        ln=True
+        text="Enterprise Data Quality Report"
     )
+
+    pdf.ln()
 
     pdf.cell(
         200,
         10,
-        txt=f"Quality Score: {quality_score:.2f}%",
-        ln=True
+        text=f"Quality Score: {quality_score:.2f}%"
     )
 
-    pdf_file = "reports/quality_report.pdf"
+    pdf.ln()
 
-    pdf.output(pdf_file)
+    pdf.cell(
+        200,
+        10,
+        text=f"Missing Values: {missing_values}"
+    )
 
-    with open(pdf_file, "rb") as f:
+    pdf.ln()
+
+    pdf.cell(
+        200,
+        10,
+        text=f"Duplicate Rows: {duplicate_rows}"
+    )
+
+    pdf.ln()
+
+    pdf.cell(
+        200,
+        10,
+        text=f"Anomalies Detected: {len(anomalies)}"
+    )
+
+    pdf.ln()
+
+    pdf_file = (
+        "reports/quality_report.pdf"
+    )
+
+    pdf.output(
+        pdf_file
+    )
+
+    with open(
+        pdf_file,
+        "rb"
+    ) as file:
 
         st.download_button(
-            "Download PDF Report",
-            f,
-            file_name="quality_report.pdf"
+            label="⬇ Download PDF Report",
+            data=file,
+            file_name="quality_report.pdf",
+            mime="application/pdf"
         )
+
+    # --------------------------------------------------
+    # SUMMARY
+    # --------------------------------------------------
+
+    st.success(
+        "Data Quality Analysis Completed Successfully ✅"
+    )
